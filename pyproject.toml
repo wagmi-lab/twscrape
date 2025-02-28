@@ -3,8 +3,8 @@ requires = ["hatchling>=1.9.1"]
 build-backend = "hatchling.build"
 
 [project]
-name = "twscrape"
-version = "0.15.0"
+name = "twscrape-custom"
+version = "0.0.1"
 authors = [{ name = "vladkens", email = "v.pronsky@gmail.com" }]
 description = "Twitter GraphQL and Search API implementation with SNScrape data models"
 readme = "readme.md"
@@ -25,6 +25,7 @@ dependencies = [
   "httpx>=0.26.0",
   "loguru>=0.7.0",
   "pyotp>=2.9.0",
+  "msal>=1.14.0"
 ]
 
 [project.optional-dependencies]

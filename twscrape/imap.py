@@ -4,6 +4,8 @@ import imaplib
 import os
 import time
 from datetime import datetime
+import msal
+
 
 from .logger import logger
 
@@ -16,6 +18,23 @@ def env_int(key: str | list[str], default: int) -> int:
 
 
 TWS_WAIT_EMAIL_CODE = env_int(["TWS_WAIT_EMAIL_CODE", "LOGIN_CODE_TIMEOUT"], 30)
+
+CLIENT_SECRET = os.getenv("CLIENT_SECRET", "")
+CLIENT_ID = os.getenv("CLIENT_ID", "")
+TENANT_ID = os.getenv("TENANT_ID", "")
+
+if CLIENT_SECRET == "" or CLIENT_ID == "" or TENANT_ID == "":
+    raise Exception("Client secret, client id, or tenant id not set")
+
+AUTHORITY = f'https://login.microsoftonline.com/{TENANT_ID}'
+SCOPES = ['https://outlook.office365.com/.default']
+
+# Create a public client application
+app = msal.ConfidentialClientApplication(
+    CLIENT_ID,
+    authority=AUTHORITY,
+    client_credential=CLIENT_SECRET,
+)
 
 
 class EmailLoginError(Exception):
@@ -97,15 +116,87 @@ async def imap_get_email_code(
         raise e
 
 
-async def imap_login(email: str, password: str):
-    domain = _get_imap_domain(email)
+def _checking_email(receiver_email:str=None,sender_email:str=None):
+    def get_token():
+        # Acquire a token using client credentials
+        result = app.acquire_token_silent(SCOPES, account=None)
+        if not result:
+            # If no token is found in the cache, acquire a new one
+            result = app.acquire_token_for_client(scopes=SCOPES)
+        return result
+
+    def get_access_token():
+        token_response = get_token()
+        access_token = token_response['access_token']
+        return access_token
+
+    def check_token_expiry(token_response):
+        # Check if the access token is about to expire in the next 5 minutes
+        expiry_time = token_response['expires_in']
+        current_time = time.time()
+        if expiry_time - current_time < 300:
+            return True
+        return False
+
+    token_response = get_token()
+    access_token = token_response['access_token']
+
+    # Check if the token is about to expire
+    if check_token_expiry(token_response):
+        token_response = get_token()
+        access_token = token_response['access_token']
+        
+        
+def generate_token():
+    def get_token():
+        # Acquire a token using client credentials
+        result = app.acquire_token_silent(SCOPES, account=None)
+        if not result:
+            # If no token is found in the cache, acquire a new one
+            result = app.acquire_token_for_client(scopes=SCOPES)
+        return result
+
+    def get_access_token():
+        token_response = get_token()
+        access_token = token_response['access_token']
+        return access_token
+
+    def check_token_expiry(token_response):
+        # Check if the access token is about to expire in the next 5 minutes
+        expiry_time = token_response['expires_in']
+        current_time = time.time()
+        if expiry_time - current_time < 300:
+            return True
+        return False
+
+    token_response = get_token()
+    access_token = token_response['access_token']
+
+    # Check if the token is about to expire
+    if check_token_expiry(token_response):
+        token_response = get_token()
+        access_token = token_response['access_token']
+        
+    return access_token
+
+def generate_auth_string(user, token):
+    auth_string = f"user={user}\1auth=Bearer {token}\1\1"
+    return auth_string
+
+async def imap_login(email: str):
+    # domain = _get_imap_domain(email)
+    domain = "outlook.office365.com"
+    
+    token = generate_token()
     imap = imaplib.IMAP4_SSL(domain)
 
     try:
-        imap.login(email, password)
+        # imap.login(email, password)
+        imap.authenticate("XOAUTH2", lambda x:generate_auth_string(email, token))
         imap.select("INBOX", readonly=True)
     except imaplib.IMAP4.error as e:
         logger.error(f"Error logging into {email} on {domain}: {e}")
         raise EmailLoginError() from e
 
     return imap
+
