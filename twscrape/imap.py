@@ -183,7 +183,7 @@ def generate_auth_string(user, token):
     auth_string = f"user={user}\1auth=Bearer {token}\1\1"
     return auth_string
 
-async def imap_login(email: str):
+async def imap_login(email: str, password:str):
     # domain = _get_imap_domain(email)
     domain = "outlook.office365.com"
     
