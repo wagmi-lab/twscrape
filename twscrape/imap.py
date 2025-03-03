@@ -68,7 +68,7 @@ def _get_imap_domain(email: str) -> str:
     return f"imap.{email_domain}"
 
 
-def _wait_email_code(imap: imaplib.IMAP4_SSL, count: int, min_t: datetime | None) -> str | None:
+def _wait_email_code(imap: imaplib.IMAP4_SSL, count: int, min_t: datetime | None, to_email:str) -> str | None:
     for i in range(count, 0, -1):
         _, rep = imap.fetch(str(i), "(RFC822)")
         for x in rep:
@@ -81,12 +81,13 @@ def _wait_email_code(imap: imaplib.IMAP4_SSL, count: int, min_t: datetime | None
 
                 msg_from = str(msg.get("From", "")).lower()
                 msg_subj = str(msg.get("Subject", "")).lower()
-                logger.info(f"({i} of {count}) {msg_from} - {msg_time} - {msg_subj}")
+                msg_to = str(msg.get("To", "")).lower()
+                logger.info(f"({i} of {count}) {msg_from} - {msg_to} - {msg_time} - {msg_subj}")
 
                 if min_t is not None and msg_time < min_t:
                     return None
 
-                if "info@x.com" in msg_from and "confirmation code is" in msg_subj:
+                if "info@x.com" in msg_from and "confirmation code is" in msg_subj and to_email in msg_to:
                     # eg. Your Twitter confirmation code is XXX
                     return msg_subj.split(" ")[-1].strip()
 
@@ -102,7 +103,7 @@ async def imap_get_email_code(
         while True:
             _, rep = imap.select("INBOX")
             msg_count = int(rep[0].decode("utf-8")) if len(rep) > 0 and rep[0] is not None else 0
-            code = _wait_email_code(imap, msg_count, min_t)
+            code = _wait_email_code(imap, msg_count, min_t, email)
             if code is not None:
                 return code
 
@@ -187,15 +188,19 @@ async def imap_login(email: str, password:str):
     # domain = _get_imap_domain(email)
     domain = "outlook.office365.com"
     
+    imap_email = os.getenv("IMAP_EMAIL", "")
+    if imap_email == "":
+        raise Exception("IMAP_EMAIL not set")
+    
     token = generate_token()
     imap = imaplib.IMAP4_SSL(domain)
 
     try:
         # imap.login(email, password)
-        imap.authenticate("XOAUTH2", lambda x:generate_auth_string(email, token))
+        imap.authenticate("XOAUTH2", lambda x:generate_auth_string(imap_email, token))
         imap.select("INBOX", readonly=True)
     except imaplib.IMAP4.error as e:
-        logger.error(f"Error logging into {email} on {domain}: {e}")
+        logger.error(f"Error logging into {imap_email} on {domain}: {e}")
         raise EmailLoginError() from e
 
     return imap
